@@ -1,0 +1,207 @@
+<html>
+
+<head>
+  <script src="https://d3js.org/d3.v6.min.js"></script>
+  <script src="https://d3js.org/topojson.v2.min.js"></script>
+
+  <style>
+    #graph,
+    h2 {
+      width: 900px;
+    }
+
+    .legend span {
+      margin-right: 10px;
+    }
+
+    .gridlines line {
+      stroke: #bbb;
+    }
+
+    .gridlines .domain {
+      stroke: none;
+    }
+
+    h2 {
+      text-align: center;
+      margin: 0px;
+      padding-top: 10px;
+      font-size: 25px;
+      font-family: sans-serif;
+    }
+
+    .axis-label {
+      font-size: 17px;
+      font-family: sans-serif;
+    }
+  </style>
+
+</head>
+
+<body>
+  <div>
+    <h2 class="title">Average Location of Tree Species</h2>
+    <svg id="scatterplot" height="600" width="900">
+      <text class="axis-label" x="65" y="260" transform="rotate(-90 40 290)" text-anchor="end"
+        alignment-baseline="hanging" fill="black">Latitude</text>
+      <text class="axis-label" x="420" y="580" text-anchor="center" alignment-baseline="hanging"
+        fill="black">Longtitude</text>
+    </svg>
+  </div>
+
+
+  <script>
+    const svg = d3.select("svg#scatterplot");
+
+    const width = svg.attr("width");
+    const height = svg.attr("height");
+    const margin = { top: 30, right: 20, bottom: 60, left: 80 };
+
+    const chartWidth = width - margin.left - margin.right;
+    const chartHeight = height - margin.top - margin.bottom;
+
+    let annotations = svg.append("g").attr("id", "annotations");
+
+    let chartArea = svg.append("g").attr("id", "points")
+      .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+    d3.select("#label").raise();
+
+    const requestData = async () => {
+
+      var data = await d3.csv("Street_Tree_List-2022-01-30_FILTERED.csv");
+
+
+
+      // cleaning
+      var allSpecies = {};
+      data.forEach(d => {
+        const i = d['qSpecies'].indexOf(" ");
+        const key = d['qSpecies'].slice(0, i);
+
+        if (key in allSpecies) {
+          allSpecies[key][0] += parseFloat(d['Longitude']);
+          allSpecies[key][1] += parseFloat(d['Latitude']);
+          allSpecies[key][2] += 1;
+        } else {
+          allSpecies[key] = [parseFloat(d['Longitude']), parseFloat(d['Latitude']), 1];
+        }
+      })
+
+
+      var cleanedData = [];
+      Object.keys(allSpecies).forEach(key => {
+        if (allSpecies[key][2] > 600) {
+          d = {};
+          d['Longitude'] = allSpecies[key][0] / allSpecies[key][2]
+          d['Latitude'] = allSpecies[key][1] / allSpecies[key][2]
+          d['Count'] = allSpecies[key][2]
+          d['Species'] = key
+          cleanedData.push(d)
+        }
+      })
+
+      console.log(cleanedData);
+
+      function compare(a, b) {
+        if (a.Latitude < b.Latitude) {
+          return -1;
+        }
+        if (a.Latitude > b.Latitude) {
+          return 1;
+        }
+        return 0;
+      }
+
+      cleanedData.sort(compare);
+
+
+
+
+
+
+      // scale
+      const longitudeExtent = d3.extent(cleanedData, d => d['Longitude']);
+      const longitudeScale = d3.scaleLinear().domain([longitudeExtent[0] - 0.003, longitudeExtent[1] + 0.003]).range([0, chartWidth]);
+
+      const latitudeExtent = d3.extent(cleanedData, d => d['Latitude']);
+      const latitudeScale = d3.scaleLinear().domain([latitudeExtent[0] - 0.002, latitudeExtent[1] + 0.004]).range([chartHeight, 0]);
+
+      const countExtent = d3.extent(cleanedData, d => d['Count']);
+      const countScale = d3.scaleLinear().domain(countExtent).range([chartHeight, 0]);
+      const countCircleScale = d3.scaleLinear().domain(countExtent).range([20, 60]);
+
+      const speciesScale = d3.scaleOrdinal(d3.schemeTableau10);
+
+
+
+
+      // y axis
+      let leftAxis = d3.axisLeft(latitudeScale)
+        .tickFormat(d3.format(""));
+      let leftGridlines = d3.axisLeft(latitudeScale)
+        .tickSize(-chartWidth - 10)
+        .tickFormat("")
+
+      annotations.append("g")
+        .attr("class", "y axis")
+        .attr("transform", "translate(" + (margin.left - 10) + "," + margin.top + ")")
+        .call(leftAxis)
+      annotations.append("g")
+        .attr("class", "y gridlines")
+        .attr("transform", "translate(" + (margin.left - 10) + "," + margin.top + ")")
+        .call(leftGridlines);
+
+
+
+
+      // x axis
+      let bottomAxis = d3.axisBottom(longitudeScale)
+        .tickFormat(d3.format(""));
+      let bottomGridlines = d3.axisBottom(longitudeScale)
+        .tickSize(-chartHeight - 10)
+        .tickFormat("")
+
+      annotations.append("g")
+        .attr("class", "x axis")
+        .attr("transform", "translate(" + margin.left + "," + (chartHeight + margin.top + 10) + ")")
+        .call(bottomAxis);
+      annotations.append("g")
+        .attr("class", "x gridlines")
+        .attr("transform", "translate(" + margin.left + "," + (chartHeight + margin.top + 10) + ")")
+        .call(bottomGridlines);
+
+
+
+      // circles
+      cleanedData.forEach((d, i) => {
+        let circle = chartArea.append("circle")
+          .attr("cy", latitudeScale(d['Latitude']))
+          .attr("cx", longitudeScale(d['Longitude']))
+          .attr("r", countCircleScale(d['Count']))
+          .attr("opacity", 0.6)
+          .attr("fill", speciesScale(d['Species']))
+          .attr("label", d['Species'])
+
+        let text = chartArea.append("text")
+          .text(d['Species'])
+          .attr("y", latitudeScale(d['Latitude']) - 3)
+          .attr("x", longitudeScale(d['Longitude']))
+          .attr("text-anchor", "middle")
+          .attr("dominant-baseline", "hanging")
+          .attr("font-size", "10px")
+
+      });
+
+
+
+    };
+
+    requestData();
+  </script>
+  </p>
+
+
+</body>
+
+</html>
